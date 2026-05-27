@@ -53,6 +53,13 @@ git push origin v0.1.0
 GitHub Actions will build native installers on macOS, Windows, and Linux and attach
 them to the GitHub release.
 
+## Launch
+
+Submission planning and copy are kept in:
+
+- [Launch submissions](docs/LAUNCH_SUBMISSIONS.md)
+- [Pitch kit](docs/PITCH_KIT.md)
+
 ## License
 
 MIT
