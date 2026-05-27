@@ -1,7 +1,7 @@
 {
   "name": "swipetrash",
   "version": "0.1.0",
-  "description": "A calm desktop app for reviewing old files and moving clutter to the trash.",
+  "description": "A cross-platform desktop app for cleaning old Downloads and Documents files with swipe cards.",
   "author": {
     "name": "FlowSync0",
     "email": "ht@flowsync0.com",
