@@ -1,0 +1,82 @@
+{
+  "name": "swipetrash",
+  "version": "0.1.0",
+  "description": "A calm desktop app for reviewing old files and moving clutter to the trash.",
+  "author": "FlowSync0",
+  "license": "MIT",
+  "homepage": "https://github.com/FlowSync0/SwipeTrash#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FlowSync0/SwipeTrash.git"
+  },
+  "bugs": {
+    "url": "https://github.com/FlowSync0/SwipeTrash/issues"
+  },
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && electron .\"",
+    "dev:electron": "wait-on tcp:5173 && electron .",
+    "dev:web": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "package": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux"
+  },
+  "dependencies": {
+    "lucide-react": "^0.555.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^9.2.1",
+    "electron": "^39.2.6",
+    "electron-builder": "^26.0.12",
+    "vite": "^7.2.4",
+    "wait-on": "^9.0.3",
+    "typescript": "^5.9.3"
+  },
+  "build": {
+    "appId": "com.flowsync0.swipetrash",
+    "productName": "SwipeTrash",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.utilities",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["universal"]
+        },
+        {
+          "target": "zip",
+          "arch": ["universal"]
+        }
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": ["nsis"]
+    },
+    "linux": {
+      "category": "Utility",
+      "icon": "build/icon.png",
+      "target": ["AppImage", "deb"]
+    }
+  }
+}
