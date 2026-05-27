@@ -263,6 +263,8 @@ function createWindow() {
     transparent: isMac,
     frame: !isMac,
     hasShadow: !isMac,
+    enableLargerThanScreen: isMac,
+    show: false,
     vibrancy: undefined,
     visualEffectState: isMac ? "active" : undefined,
     title: "SwipeTrash",
@@ -279,6 +281,24 @@ function createWindow() {
   }
   rememberPassthroughWindow(mainWindow);
   mainWindow.setIgnoreMouseEvents(true, { forward: true });
+
+  let didShow = false;
+  const showWindow = () => {
+    if (didShow || mainWindow.isDestroyed()) {
+      return;
+    }
+    didShow = true;
+    if (isMac) {
+      mainWindow.setBounds(bounds, false);
+    }
+    mainWindow.show();
+    mainWindow.focus();
+  };
+
+  mainWindow.once("ready-to-show", showWindow);
+  mainWindow.webContents.once("did-finish-load", () => {
+    setTimeout(showWindow, 80);
+  });
 
   if (app.isPackaged) {
     mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
