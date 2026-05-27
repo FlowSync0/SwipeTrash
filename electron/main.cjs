@@ -248,22 +248,21 @@ function setPassthroughIgnored(window, ignored) {
     return;
   }
   state.ignored = ignored;
-  window.setIgnoreMouseEvents(ignored, { forward: true });
+  window.setIgnoreMouseEvents(false, { forward: true });
 }
 
 function createWindow() {
   const isMac = process.platform === "darwin";
   const isWindows = process.platform === "win32";
-  const bounds = isMac ? getPassthroughWindowBounds() : getVisibleWindowBounds();
+  const bounds = getVisibleWindowBounds();
   const mainWindow = new BrowserWindow({
     ...bounds,
-    minWidth: isMac ? bounds.width : 420,
-    minHeight: isMac ? bounds.height : 520,
+    minWidth: 420,
+    minHeight: 520,
     backgroundColor: isMac ? "#00000000" : "#f6f4ef",
     transparent: isMac,
     frame: !isMac,
     hasShadow: !isMac,
-    enableLargerThanScreen: isMac,
     show: false,
     vibrancy: undefined,
     visualEffectState: isMac ? "active" : undefined,
@@ -280,7 +279,7 @@ function createWindow() {
     mainWindow.setBackgroundMaterial("acrylic");
   }
   rememberPassthroughWindow(mainWindow);
-  mainWindow.setIgnoreMouseEvents(true, { forward: true });
+  mainWindow.setIgnoreMouseEvents(false, { forward: true });
 
   let didShow = false;
   const showWindow = () => {
@@ -849,7 +848,7 @@ function registerIpcHandlers() {
     }
     if (action === "zoom") {
       if (process.platform === "darwin") {
-        window.setBounds(getPassthroughWindowBounds(), true);
+        window.setBounds(getVisibleWindowBounds(), true);
       } else if (window.isMaximized()) {
         window.unmaximize();
       } else {

@@ -12,9 +12,9 @@ It runs on macOS, Windows, and Linux.
 
 ## Demo
 
-<video src="https://github.com/FlowSync0/SwipeTrash/raw/main/docs/assets/swipetrash-demo.webm" controls width="720"></video>
+![SwipeTrash demo](docs/assets/swipetrash-demo.gif)
 
-[Watch the demo video](docs/assets/swipetrash-demo.webm)
+[Watch the WebM demo video](docs/assets/swipetrash-demo.webm)
 
 ## Download
 
