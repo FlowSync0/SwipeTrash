@@ -10,6 +10,12 @@ day.
 
 It runs on macOS, Windows, and Linux.
 
+## Demo
+
+<video src="https://github.com/FlowSync0/SwipeTrash/raw/main/docs/assets/swipetrash-demo.webm" controls width="720"></video>
+
+[Watch the demo video](docs/assets/swipetrash-demo.webm)
+
 ## Download
 
 Installers are available from the latest GitHub release:
