@@ -18,13 +18,13 @@ jobs:
         include:
           - name: macOS
             os: macos-latest
-            command: npm run dist:mac
+            command: npm run build && npx electron-builder --mac --publish never
           - name: Windows
             os: windows-latest
-            command: npm run dist:win
+            command: npm run build && npx electron-builder --win --publish never
           - name: Linux
             os: ubuntu-latest
-            command: npm run dist:linux
+            command: npm run build && npx electron-builder --linux --publish never
 
     steps:
       - name: Checkout

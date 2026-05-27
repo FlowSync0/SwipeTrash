@@ -2,7 +2,11 @@
   "name": "swipetrash",
   "version": "0.1.0",
   "description": "A calm desktop app for reviewing old files and moving clutter to the trash.",
-  "author": "FlowSync0",
+  "author": {
+    "name": "FlowSync0",
+    "email": "ht@flowsync0.com",
+    "url": "https://github.com/FlowSync0"
+  },
   "license": "MIT",
   "homepage": "https://github.com/FlowSync0/SwipeTrash#readme",
   "repository": {
