@@ -10,7 +10,7 @@ Reddit r/SideProject,2,https://www.reddit.com/r/SideProject/,yes,not_started,"Re
 Dev.to,3,https://dev.to/,yes,not_started,"Email signup is available; article draft exists in submission kit but was not published."
 Peerlist Launchpad,3,https://peerlist.io/launchpad,yes,blocked_cloudflare,"Cloudflare security verification blocked normal access; no bypass attempted."
 DevHunt,3,https://devhunt.org/,yes,blocked_oauth,"Login requires GitHub or Google OAuth to filter bots/fakes; needs manual OAuth session."
-Tiny Startups,3,https://www.tinystartups.com/startup/swipetrash,yes,submitted_scheduled_badge_pending,"Account FlowSync0 created and verified. Free launch approved and scheduled for 2026-08-15; badge verification pending."
+Tiny Startups,3,https://www.tinystartups.com/startup/swipetrash,yes,submitted_scheduled,"Account FlowSync0 created and verified. Free launch approved and scheduled for 2026-08-15; badge verified."
 Fazier,3,https://fazier.com/,yes,blocked_auth_ui,"Email auth modal rendered visually but fields were not reliably controllable through Playwright; no account completed."
 BetaList,3,https://betalist.com/submissions/170895,yes,blocked_paid_package,"Account FlowSync0 created and verified. Draft completed, but publishing requires a paid package; cheapest visible option was $39."
 Smol Launch,3,https://smollaunch.com/,yes,not_started,Indie maker launch directory.
