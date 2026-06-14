@@ -80,12 +80,7 @@ button:disabled {
   -webkit-app-region: drag;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 14px;
-  background:
-    radial-gradient(circle at 50% -14%, rgba(139, 202, 248, 0.36), transparent 45%),
-    radial-gradient(circle at 88% 18%, rgba(241, 249, 255, 0.14), transparent 33%),
-    radial-gradient(circle at 6% 82%, rgba(99, 137, 196, 0.18), transparent 38%),
-    linear-gradient(160deg, rgba(116, 159, 190, 0.2), rgba(27, 42, 59, 0.72) 42%, rgba(11, 18, 28, 0.82)),
-    rgba(20, 31, 45, 0.9);
+  background: rgba(18, 29, 43, 0.96);
   box-shadow:
     0 28px 90px rgba(0, 0, 0, 0.34),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
@@ -99,10 +94,8 @@ button:disabled {
   z-index: 0;
   pointer-events: none;
   content: "";
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.11), transparent 24%),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035), transparent 50%, rgba(255, 255, 255, 0.04));
-  opacity: 0.58;
+  background: rgba(255, 255, 255, 0.03);
+  opacity: 1;
 }
 
 .window-controls {
