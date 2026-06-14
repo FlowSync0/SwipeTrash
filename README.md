@@ -10,6 +10,8 @@ day.
 
 It runs on macOS, Windows, and Linux.
 
+[Launched on Tiny Startups](https://www.tinystartups.com/startup/swipetrash)
+
 ## Demo
 
 ![SwipeTrash demo](docs/assets/swipetrash-demo.gif)
