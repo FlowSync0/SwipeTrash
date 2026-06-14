@@ -14,7 +14,10 @@ const DEFAULT_SETTINGS = {
 
 const MAX_SCAN_FILES = 12000;
 const MAX_SCAN_DEPTH = 8;
+const MAX_TRASH_BATCH = 20;
 const PREVIEW_SCHEME = "swipetrash-file";
+const DEFAULT_DEV_SERVER_URL = "http://127.0.0.1:5173";
+const SAFE_DEV_SERVER_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 
 const SKIPPED_DIR_NAMES = new Set([
   "node_modules",
@@ -155,6 +158,7 @@ const TEXT_EXTENSIONS = new Set([
 const ARCHIVE_EXTENSIONS = new Set([".7z", ".bz2", ".gz", ".rar", ".tar", ".tgz", ".zip"]);
 const INSTALLER_EXTENSIONS = new Set([".dmg", ".iso", ".msi", ".pkg"]);
 const DOCUMENT_EXTENSIONS = new Set([".doc", ".docx", ".key", ".numbers", ".pages", ".pdf", ".ppt", ".pptx", ".xls", ".xlsx"]);
+const UNSAFE_PREVIEW_EXTENSIONS = new Set([".svg"]);
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -169,92 +173,148 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let stateCache;
-const passthroughWindows = new Map();
-let passthroughPoll = null;
 
-const VISIBLE_APP_WIDTH = 760;
-const VISIBLE_APP_HEIGHT = 820;
-const INVISIBLE_WINDOW_SCALE = 2.15;
-const INVISIBLE_WINDOW_MIN_MARGIN = 900;
-const MAX_TRANSPARENT_WINDOW_DEVICE_SIZE = 7168;
+const VISIBLE_APP_WIDTH = 650;
+const VISIBLE_APP_HEIGHT = 720;
+const INVISIBLE_SCREEN_WIDTH_MARGINS = 1;
 
-function getVisibleWindowBounds() {
-  const { workArea } = screen.getPrimaryDisplay();
+class UserFacingError extends Error {}
+
+function getDisplayCenter(display) {
+  const { workArea } = display;
   return {
-    x: Math.round(workArea.x + workArea.width / 2 - VISIBLE_APP_WIDTH / 2),
-    y: Math.round(workArea.y + workArea.height / 2 - VISIBLE_APP_HEIGHT / 2),
-    width: VISIBLE_APP_WIDTH,
-    height: VISIBLE_APP_HEIGHT
+    x: workArea.x + workArea.width / 2,
+    y: workArea.y + workArea.height / 2
   };
 }
 
-function getPassthroughWindowBounds() {
-  const displays = screen.getAllDisplays();
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const maxScaleFactor = Math.max(...displays.map((display) => display.scaleFactor || 1), 1);
-  const maxCssSize = Math.floor(MAX_TRANSPARENT_WINDOW_DEVICE_SIZE / maxScaleFactor);
-  const maxWorkAreaWidth = Math.max(...displays.map((display) => display.workArea.width), primaryDisplay.workArea.width);
-  const width = Math.min(
-    maxCssSize,
-    Math.max(VISIBLE_APP_WIDTH + INVISIBLE_WINDOW_MIN_MARGIN * 2, Math.ceil(maxWorkAreaWidth * INVISIBLE_WINDOW_SCALE))
-  );
-  const height = VISIBLE_APP_HEIGHT;
-
+function getBoundsCenter(bounds) {
   return {
-    x: Math.round(primaryDisplay.workArea.x + primaryDisplay.workArea.width / 2 - width / 2),
-    y: Math.round(primaryDisplay.workArea.y + primaryDisplay.workArea.height / 2 - height / 2),
+    x: bounds.x + bounds.width / 2,
+    y: bounds.y + bounds.height / 2
+  };
+}
+
+function getShellWindowBounds(display = screen.getPrimaryDisplay(), center = getDisplayCenter(display)) {
+  const { workArea } = display;
+  const width = Math.round(workArea.width * (1 + INVISIBLE_SCREEN_WIDTH_MARGINS * 2) + VISIBLE_APP_WIDTH);
+  const height = Math.min(VISIBLE_APP_HEIGHT, Math.round(workArea.height));
+  return {
+    x: Math.round(center.x - width / 2),
+    y: Math.round(center.y - height / 2),
     width,
     height
   };
 }
 
-function rememberPassthroughWindow(window) {
-  passthroughWindows.set(window.id, {
-    ignored: null,
-    interactionActive: false,
-    region: null
-  });
-  window.on("closed", () => passthroughWindows.delete(window.id));
-  startPassthroughPolling();
+function getVisibleWindowBounds(display = screen.getPrimaryDisplay(), center = getDisplayCenter(display)) {
+  const height = Math.min(VISIBLE_APP_HEIGHT, Math.round(display.workArea.height));
+  return {
+    x: Math.round(center.x - VISIBLE_APP_WIDTH / 2),
+    y: Math.round(center.y - height / 2),
+    width: VISIBLE_APP_WIDTH,
+    height
+  };
 }
 
-function startPassthroughPolling() {
-  if (passthroughPoll) {
-    return;
-  }
-  passthroughPoll = setInterval(() => {
-    const cursor = screen.getCursorScreenPoint();
-    for (const window of BrowserWindow.getAllWindows()) {
-      const state = passthroughWindows.get(window.id);
-      if (!state || window.isDestroyed()) {
-        continue;
-      }
-      const region = state.region;
-      const bounds = window.getBounds();
-      const insideRegion =
-        Boolean(region) &&
-        cursor.x >= bounds.x + region.x &&
-        cursor.x <= bounds.x + region.x + region.width &&
-        cursor.y >= bounds.y + region.y &&
-        cursor.y <= bounds.y + region.y + region.height;
-      setPassthroughIgnored(window, !insideRegion && !state.interactionActive);
+function getVisibleSurfaceBounds(window) {
+  const bounds = window.getBounds();
+  const surfaceWidth = bounds.width <= 620 ? bounds.width : Math.min(VISIBLE_APP_WIDTH, Math.max(320, bounds.width - 80));
+  const surfaceHeight = Math.min(VISIBLE_APP_HEIGHT, bounds.height);
+  return {
+    x: bounds.x + (bounds.width - surfaceWidth) / 2,
+    y: bounds.y + (bounds.height - surfaceHeight) / 2,
+    width: surfaceWidth,
+    height: surfaceHeight
+  };
+}
+
+function pointInsideBounds(point, bounds) {
+  return point.x >= bounds.x && point.x <= bounds.x + bounds.width && point.y >= bounds.y && point.y <= bounds.y + bounds.height;
+}
+
+function installTransparentClickThrough(window) {
+  let isIgnoringMouse = false;
+  let interval = null;
+
+  const updateMouseMode = () => {
+    if (window.isDestroyed()) {
+      return;
     }
-  }, 16);
+
+    const cursor = screen.getCursorScreenPoint();
+    const shouldIgnoreMouse = !pointInsideBounds(cursor, getVisibleSurfaceBounds(window));
+    if (shouldIgnoreMouse === isIgnoringMouse) {
+      return;
+    }
+
+    isIgnoringMouse = shouldIgnoreMouse;
+    window.setIgnoreMouseEvents(shouldIgnoreMouse, { forward: true });
+  };
+
+  const startTracking = () => {
+    if (window.isDestroyed()) {
+      return;
+    }
+
+    isIgnoringMouse = false;
+    window.setIgnoreMouseEvents(false, { forward: true });
+    setTimeout(updateMouseMode, 320);
+    interval ??= setInterval(updateMouseMode, 60);
+  };
+
+  window.once("closed", () => {
+    if (interval) {
+      clearInterval(interval);
+    }
+  });
+  window.on("show", startTracking);
+  window.on("focus", startTracking);
+  window.on("move", updateMouseMode);
 }
 
-function setPassthroughIgnored(window, ignored) {
-  const state = passthroughWindows.get(window.id);
-  if (!state || state.ignored === ignored) {
-    return;
-  }
-  state.ignored = ignored;
-  window.setIgnoreMouseEvents(false, { forward: true });
+function installDisplayAwareShellSizing(window) {
+  let resizeTimer = null;
+
+  const syncToCurrentDisplay = () => {
+    if (window.isDestroyed()) {
+      return;
+    }
+
+    const currentBounds = window.getBounds();
+    const center = getBoundsCenter(currentBounds);
+    const display = screen.getDisplayNearestPoint(center);
+    const nextBounds = getShellWindowBounds(display, center);
+    const widthChanged = Math.abs(currentBounds.width - nextBounds.width) > 1;
+    const heightChanged = Math.abs(currentBounds.height - nextBounds.height) > 1;
+    if (!widthChanged && !heightChanged) {
+      return;
+    }
+
+    window.setBounds(nextBounds, false);
+  };
+
+  const scheduleSync = () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(syncToCurrentDisplay, 180);
+  };
+
+  window.on("move", scheduleSync);
+  screen.on("display-added", scheduleSync);
+  screen.on("display-removed", scheduleSync);
+  screen.on("display-metrics-changed", scheduleSync);
+  window.once("closed", () => {
+    clearTimeout(resizeTimer);
+    screen.off("display-added", scheduleSync);
+    screen.off("display-removed", scheduleSync);
+    screen.off("display-metrics-changed", scheduleSync);
+  });
 }
 
 function createWindow() {
   const isMac = process.platform === "darwin";
   const isWindows = process.platform === "win32";
-  const bounds = getVisibleWindowBounds();
+  const bounds = isMac ? getShellWindowBounds() : getVisibleWindowBounds();
   const mainWindow = new BrowserWindow({
     ...bounds,
     minWidth: 420,
@@ -271,15 +331,21 @@ function createWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      devTools: !app.isPackaged || process.env.SWIPETRASH_DEVTOOLS === "1"
     }
   });
 
   if (isWindows && typeof mainWindow.setBackgroundMaterial === "function") {
     mainWindow.setBackgroundMaterial("acrylic");
   }
-  rememberPassthroughWindow(mainWindow);
-  mainWindow.setIgnoreMouseEvents(false, { forward: true });
+
+  if (isMac) {
+    installTransparentClickThrough(mainWindow);
+    installDisplayAwareShellSizing(mainWindow);
+  }
 
   let didShow = false;
   const showWindow = () => {
@@ -302,11 +368,20 @@ function createWindow() {
   if (app.isPackaged) {
     mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   } else {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL || "http://127.0.0.1:5173");
+    mainWindow.loadURL(getDevServerUrl());
     if (process.env.SWIPETRASH_DEVTOOLS === "1") {
       mainWindow.webContents.openDevTools({ mode: "detach" });
     }
   }
+}
+
+function getDevServerUrl() {
+  const rawUrl = process.env.VITE_DEV_SERVER_URL || DEFAULT_DEV_SERVER_URL;
+  const parsed = new URL(rawUrl);
+  if (parsed.protocol !== "http:" || !SAFE_DEV_SERVER_HOSTS.has(parsed.hostname)) {
+    throw new Error("Unsafe Vite dev server URL. Use a localhost HTTP URL.");
+  }
+  return parsed.toString();
 }
 
 function normalizeSettings(settings = {}) {
@@ -652,7 +727,7 @@ async function enrichCandidate(candidate) {
 }
 
 function previewUrlFor(filePath, kind) {
-  if (!["audio", "image", "pdf", "video"].includes(kind)) {
+  if (!["audio", "image", "pdf", "video"].includes(kind) || UNSAFE_PREVIEW_EXTENSIONS.has(path.extname(filePath).toLowerCase())) {
     return "";
   }
 
@@ -771,16 +846,50 @@ async function playNativeTrashSound() {
 
 function validateFilePath(filePath, settings) {
   if (typeof filePath !== "string" || !filePath) {
-    throw new Error("Chemin invalide.");
+    throw new UserFacingError("Chemin invalide.");
   }
 
   const resolved = path.resolve(filePath);
   const roots = getConfiguredRoots(settings);
   if (!isInsideRoot(resolved, roots)) {
-    throw new Error("Ce fichier n'est pas dans les sources autorisées.");
+    throw new UserFacingError("Ce fichier n'est pas dans les sources autorisées.");
   }
 
   return resolved;
+}
+
+async function validateReviewableFilePath(filePath, settings) {
+  const resolved = validateFilePath(filePath, settings);
+  let stat;
+  try {
+    stat = await fs.lstat(resolved);
+  } catch {
+    throw new UserFacingError("Ce fichier n'est plus disponible.");
+  }
+
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size <= 0) {
+    throw new UserFacingError("Ce fichier ne peut pas être traité par SwipeTrash.");
+  }
+
+  const name = path.basename(resolved);
+  if (shouldSkipFile(name, resolved)) {
+    throw new UserFacingError("Ce fichier ne peut pas être traité par SwipeTrash.");
+  }
+
+  const kind = classifyFile(path.extname(name).toLowerCase());
+  if (kind === "other") {
+    throw new UserFacingError("Ce type de fichier n'est pas pris en charge.");
+  }
+
+  return { kind, resolved, stat };
+}
+
+function isPreviewableCandidate(filePath, kind) {
+  return ["audio", "image", "pdf", "video"].includes(kind) && !UNSAFE_PREVIEW_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function publicErrorMessage(error, fallback) {
+  return error instanceof UserFacingError ? error.message : fallback;
 }
 
 function registerPreviewProtocol() {
@@ -788,10 +897,13 @@ function registerPreviewProtocol() {
     try {
       const requestUrl = new URL(request.url);
       const encoded = decodeURIComponent(requestUrl.pathname.slice(1));
-      const filePath = path.resolve(Buffer.from(encoded, "base64url").toString("utf8"));
+      const filePath = Buffer.from(encoded, "base64url").toString("utf8");
       const state = await loadState();
-      validateFilePath(filePath, state.settings);
-      return net.fetch(pathToFileURL(filePath).toString());
+      const candidate = await validateReviewableFilePath(filePath, state.settings);
+      if (!isPreviewableCandidate(candidate.resolved, candidate.kind)) {
+        return new Response("Aperçu indisponible", { status: 404 });
+      }
+      return net.fetch(pathToFileURL(candidate.resolved).toString());
     } catch {
       return new Response("Aperçu indisponible", { status: 404 });
     }
@@ -799,40 +911,6 @@ function registerPreviewProtocol() {
 }
 
 function registerIpcHandlers() {
-  ipcMain.on("window:set-ignore-mouse-events", (event, ignored) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    if (!window) {
-      return;
-    }
-    setPassthroughIgnored(window, Boolean(ignored));
-  });
-
-  ipcMain.on("window:set-interactive-region", (event, region) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    const state = window ? passthroughWindows.get(window.id) : null;
-    if (!window || !state || !region) {
-      return;
-    }
-    state.region = {
-      x: Number(region.x) || 0,
-      y: Number(region.y) || 0,
-      width: Math.max(0, Number(region.width) || 0),
-      height: Math.max(0, Number(region.height) || 0)
-    };
-  });
-
-  ipcMain.on("window:set-interaction-active", (event, active) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    const state = window ? passthroughWindows.get(window.id) : null;
-    if (!window || !state) {
-      return;
-    }
-    state.interactionActive = Boolean(active);
-    if (state.interactionActive) {
-      setPassthroughIgnored(window, false);
-    }
-  });
-
   ipcMain.on("window:action", (event, action) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (!window) {
@@ -848,7 +926,8 @@ function registerIpcHandlers() {
     }
     if (action === "zoom") {
       if (process.platform === "darwin") {
-        window.setBounds(getVisibleWindowBounds(), true);
+        const display = screen.getDisplayNearestPoint(getBoundsCenter(window.getBounds()));
+        window.setBounds(getShellWindowBounds(display), true);
       } else if (window.isMaximized()) {
         window.unmaximize();
       } else {
@@ -866,8 +945,8 @@ function registerIpcHandlers() {
 
   ipcMain.handle("files:record-keep", async (_event, filePath) => {
     const state = await loadState();
-    const resolved = validateFilePath(filePath, state.settings);
-    rememberDecision(state, resolved, "keep");
+    const candidate = await validateReviewableFilePath(filePath, state.settings);
+    rememberDecision(state, candidate.resolved, "keep");
     await saveState();
     return { ok: true, dayStats: getDayStats(state), totals: getTotals(state) };
   });
@@ -888,23 +967,22 @@ function registerIpcHandlers() {
 
   ipcMain.handle("files:trash", async (_event, filePaths) => {
     const state = await loadState();
-    const paths = Array.isArray(filePaths) ? filePaths : [];
+    const paths = Array.isArray(filePaths) ? filePaths.slice(0, MAX_TRASH_BATCH) : [];
     const results = [];
     let successCount = 0;
 
     for (const filePath of paths) {
       try {
-        const resolved = validateFilePath(filePath, state.settings);
-        const stat = await fs.stat(resolved);
-        await shell.trashItem(resolved);
-        rememberDecision(state, resolved, "trash", stat.size);
+        const candidate = await validateReviewableFilePath(filePath, state.settings);
+        await shell.trashItem(candidate.resolved);
+        rememberDecision(state, candidate.resolved, "trash", candidate.stat.size);
         successCount += 1;
-        results.push({ path: resolved, ok: true });
+        results.push({ path: candidate.resolved, ok: true });
       } catch (error) {
         results.push({
           path: typeof filePath === "string" ? filePath : "",
           ok: false,
-          error: error instanceof Error ? error.message : "Impossible de déplacer ce fichier."
+          error: publicErrorMessage(error, "Impossible de déplacer ce fichier.")
         });
       }
     }
@@ -916,15 +994,15 @@ function registerIpcHandlers() {
 
   ipcMain.handle("files:open", async (_event, filePath) => {
     const state = await loadState();
-    const resolved = validateFilePath(filePath, state.settings);
-    const error = await shell.openPath(resolved);
-    return { ok: !error, error };
+    const candidate = await validateReviewableFilePath(filePath, state.settings);
+    const error = await shell.openPath(candidate.resolved);
+    return { ok: !error, error: error ? "Impossible d'ouvrir ce fichier." : "" };
   });
 
   ipcMain.handle("files:reveal", async (_event, filePath) => {
     const state = await loadState();
-    const resolved = validateFilePath(filePath, state.settings);
-    shell.showItemInFolder(resolved);
+    const candidate = await validateReviewableFilePath(filePath, state.settings);
+    shell.showItemInFolder(candidate.resolved);
     return { ok: true };
   });
 }

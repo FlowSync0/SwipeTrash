@@ -74,9 +74,6 @@ export interface SwipeTrashApi {
   trashFiles(filePaths: string[]): Promise<TrashResult>;
   openFile(filePath: string): Promise<{ ok: boolean; error?: string }>;
   revealFile(filePath: string): Promise<{ ok: boolean }>;
-  setInteractiveRegion?(region: { x: number; y: number; width: number; height: number }): void;
-  setInteractionActive?(active: boolean): void;
-  setMouseEventsIgnored?(ignored: boolean): void;
   windowAction?(action: "close" | "minimize" | "zoom"): void;
 }
 

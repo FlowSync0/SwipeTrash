@@ -179,11 +179,15 @@ export default function App() {
   const [error, setError] = useState("");
   const [drag, setDrag] = useState({ active: false, startX: 0, x: 0 });
   const [flight, setFlight] = useState<{ action: SwipeAction; x: number } | null>(null);
-  const surfaceRef = useRef<HTMLDivElement | null>(null);
   const didLoad = useRef(false);
   const decisionQueue = useRef<Promise<void>>(Promise.resolve());
-  const lastIgnoredMouseEvents = useRef<boolean | null>(true);
-  const interactionActive = useRef(false);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const closeTutorial = useCallback(() => {
+    setShowTutorial(false);
+    window.localStorage.setItem("swipetrash.onboarded", "1");
+  }, []);
+  const settingsDialogRef = useDialogFocus<HTMLDivElement>(settingsOpen, closeSettings);
+  const tutorialDialogRef = useDialogFocus<HTMLDivElement>(showTutorial, closeTutorial);
 
   const current = files[index] ?? null;
   const reviewedToday = dayStats.kept + dayStats.trashed;
@@ -229,92 +233,9 @@ export default function App() {
   }, [notice]);
 
   useEffect(() => {
-    interactionActive.current = drag.active || Boolean(flight);
-    api.setInteractionActive?.(interactionActive.current);
-  }, [api, drag.active, flight]);
-
-  useEffect(() => {
-    if (!api.setInteractiveRegion) {
-      return;
-    }
-
-    const updateRegion = () => {
-      const surface = surfaceRef.current;
-      if (!surface) {
-        return;
-      }
-      const rect = surface.getBoundingClientRect();
-      api.setInteractiveRegion?.({
-        x: rect.left,
-        y: rect.top,
-        width: rect.width,
-        height: rect.height
-      });
-    };
-
-    updateRegion();
-    const resizeObserver = new ResizeObserver(updateRegion);
-    if (surfaceRef.current) {
-      resizeObserver.observe(surfaceRef.current);
-    }
-    window.addEventListener("resize", updateRegion);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener("resize", updateRegion);
-    };
-  }, [api]);
-
-  useEffect(() => {
-    if (!api.setMouseEventsIgnored) {
-      return;
-    }
-
-    const setIgnored = (ignored: boolean) => {
-      if (lastIgnoredMouseEvents.current === ignored) {
-        return;
-      }
-      lastIgnoredMouseEvents.current = ignored;
-      api.setMouseEventsIgnored?.(ignored);
-    };
-
-    const onMouseMove = (event: MouseEvent) => {
-      const surface = surfaceRef.current;
-      if (!surface) {
-        setIgnored(false);
-        return;
-      }
-      if (interactionActive.current) {
-        setIgnored(false);
-        return;
-      }
-      const rect = surface.getBoundingClientRect();
-      const isInsideSurface =
-        event.clientX >= rect.left &&
-        event.clientX <= rect.right &&
-        event.clientY >= rect.top &&
-        event.clientY <= rect.bottom;
-      setIgnored(!isInsideSurface);
-    };
-    const onMouseLeave = () => setIgnored(true);
-
-    window.addEventListener("mousemove", onMouseMove, { capture: true });
-    window.addEventListener("pointermove", onMouseMove, { capture: true });
-    window.addEventListener("mouseleave", onMouseLeave);
-    setIgnored(true);
-
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove, { capture: true });
-      window.removeEventListener("pointermove", onMouseMove, { capture: true });
-      window.removeEventListener("mouseleave", onMouseLeave);
-      setIgnored(false);
-    };
-  }, [api]);
-
-  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest("button, input, select, textarea, [role='dialog']")) {
+      if (target?.closest("input, select, textarea, [contenteditable='true'], [role='dialog']")) {
         return;
       }
       if (event.key === "ArrowLeft") {
@@ -338,6 +259,7 @@ export default function App() {
       return;
     }
 
+    setError("");
     const file = current;
     const actionIndex = index;
     const releaseX = drag.active ? drag.x : 0;
@@ -373,6 +295,8 @@ export default function App() {
           }
         }
       } catch (decisionError) {
+        setIndex(actionIndex);
+        setNotice("");
         setError(decisionError instanceof Error ? decisionError.message : action === "trash" ? t.failedTrash : t.failedKeep);
       }
     });
@@ -383,6 +307,7 @@ export default function App() {
       return;
     }
 
+    setError("");
     setActing(true);
     try {
       const result = await api.forgetDecision(undoEntry.file.path);
@@ -411,24 +336,10 @@ export default function App() {
     window.localStorage.setItem("swipetrash.language", nextLanguage);
   }
 
-  function closeTutorial() {
-    setShowTutorial(false);
-    window.localStorage.setItem("swipetrash.onboarded", "1");
-  }
-
-  function enableWindowMouseEvents() {
-    if (lastIgnoredMouseEvents.current === false) {
-      return;
-    }
-    lastIgnoredMouseEvents.current = false;
-    api.setMouseEventsIgnored?.(false);
-  }
-
   function onPointerDown(event: PointerEvent<HTMLElement>) {
     if (!current || acting) {
       return;
     }
-    enableWindowMouseEvents();
     event.currentTarget.setPointerCapture(event.pointerId);
     setDrag({ active: true, startX: event.clientX, x: 0 });
   }
@@ -467,7 +378,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="app-surface" ref={surfaceRef} onPointerEnter={enableWindowMouseEvents} onPointerDownCapture={enableWindowMouseEvents}>
+      <div className="app-surface">
         <div className="window-controls">
           <button className="window-control close" type="button" onClick={() => api.windowAction?.("close")} aria-label="Close" />
           <button className="window-control minimize" type="button" onClick={() => api.windowAction?.("minimize")} aria-label="Minimize" />
@@ -494,22 +405,33 @@ export default function App() {
             </div>
           </div>
 
-          <button className="settings-button" type="button" onClick={() => setSettingsOpen(true)} aria-label={t.settings} title={t.settings}>
-            <Settings2 size={19} />
+          <button
+            className="settings-button"
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            aria-label={t.settings}
+            title={t.settings}
+            data-testid="settings-button"
+          >
+            <Settings2 size={19} aria-hidden="true" />
           </button>
         </header>
 
         <main className="workspace">
-          <section className={`deck-area ${flight ? `deck-${flight.action}` : ""}`} aria-live="polite">
+          <section className={`deck-area ${flight ? `deck-${flight.action}` : ""}`} aria-live="polite" data-testid="deck-area">
             {loading ? (
-              <div className="state-panel">
-                <Loader2 className="spin" size={28} />
+              <div className="state-panel" role="status" aria-live="polite" data-testid="loading-state">
+                <Loader2 className="spin" size={28} aria-hidden="true" />
                 <p>{t.scanning}</p>
               </div>
             ) : error && !current ? (
-              <div className="state-panel">
-                <X size={28} />
+              <div className="state-panel" role="alert" data-testid="error-state">
+                <X size={28} aria-hidden="true" />
                 <p>{error}</p>
+                <button className="secondary-button" type="button" onClick={() => void loadDeck(settings)}>
+                  <RefreshCw size={16} aria-hidden="true" />
+                  <span>{t.refresh}</span>
+                </button>
               </div>
             ) : current ? (
               <>
@@ -521,15 +443,16 @@ export default function App() {
                   onPointerMove={onPointerMove}
                   onPointerUp={onPointerUp}
                   onPointerCancel={onPointerUp}
+                  data-testid="swipe-card"
                 >
                   <div className="swipe-overlay keep-overlay" style={{ opacity: keepOpacity }} />
                   <div className="swipe-overlay trash-overlay" style={{ opacity: trashOpacity }} />
                   <div className="decision-stamp keep-stamp" style={{ opacity: keepOpacity }}>
-                    <Check size={18} />
+                    <Check size={18} aria-hidden="true" />
                     <span>{t.keep}</span>
                   </div>
                   <div className="decision-stamp trash-stamp" style={{ opacity: trashOpacity }}>
-                    <Trash2 size={18} />
+                    <Trash2 size={18} aria-hidden="true" />
                     <span>{t.trash}</span>
                   </div>
 
@@ -537,7 +460,9 @@ export default function App() {
                     <div className="file-title">
                       {iconForKind(current.kind)}
                       <div>
-                        <h2 title={current.name}>{current.name}</h2>
+                        <h2 title={current.name} data-testid="file-name">
+                          {current.name}
+                        </h2>
                         <p>{current.reason}</p>
                       </div>
                     </div>
@@ -547,25 +472,27 @@ export default function App() {
 
                   <footer className="file-footer">
                     <span title={current.directory}>{current.directory}</span>
-                    <span>{formatBytes(current.size, language)} · {formatDate(current.modifiedAt, language)}</span>
+                    <span data-testid="file-meta">
+                      {formatBytes(current.size, language)} · {formatDate(current.modifiedAt, language)}
+                    </span>
                   </footer>
                 </article>
 
                 <div className="action-dock">
                   <IconButton label={t.reveal} onClick={() => current && void api.revealFile(current.path)} disabled={!current}>
-                    <FolderOpen size={21} />
+                    <FolderOpen size={21} aria-hidden="true" />
                   </IconButton>
                   <IconButton label={t.preview} onClick={() => current && void api.openFile(current.path)} disabled={!current}>
-                    <Eye size={21} />
+                    <Eye size={21} aria-hidden="true" />
                   </IconButton>
                 </div>
               </>
             ) : (
-              <div className="state-panel">
-                <ShieldCheck size={30} />
+              <div className="state-panel" role="status" aria-live="polite" data-testid="empty-state">
+                <ShieldCheck size={30} aria-hidden="true" />
                 <p>{reviewedToday >= settings.dailyGoal ? t.done : t.empty}</p>
                 <button className="secondary-button" type="button" onClick={() => void loadDeck(settings)}>
-                  <RefreshCw size={16} />
+                  <RefreshCw size={16} aria-hidden="true" />
                   <span>{t.refresh}</span>
                 </button>
               </div>
@@ -575,24 +502,32 @@ export default function App() {
       </div>
 
       {(notice || error) && (
-        <div className={`toast ${error ? "error" : ""}`} role="status">
+        <div className={`toast ${error ? "error" : ""}`} role={error ? "alert" : "status"} aria-live={error ? "assertive" : "polite"}>
           {error || notice}
         </div>
       )}
 
       {settingsOpen && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-          <div className="settings-panel">
+        <div className="modal-backdrop">
+          <div
+            className="settings-panel"
+            ref={settingsDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
+            tabIndex={-1}
+            data-testid="settings-dialog"
+          >
             <header className="settings-header">
               <h2 id="settings-title">{t.settings}</h2>
-              <button type="button" onClick={() => setSettingsOpen(false)} aria-label={t.close} title={t.close}>
-                <X size={18} />
+              <button type="button" onClick={closeSettings} aria-label={t.close} title={t.close}>
+                <X size={18} aria-hidden="true" />
               </button>
             </header>
 
             <div className="panel-section">
               <div className="section-title">
-                <HardDrive size={16} />
+                <HardDrive size={16} aria-hidden="true" />
                 <span>{t.sources}</span>
               </div>
               <label className="toggle-row">
@@ -615,7 +550,7 @@ export default function App() {
 
             <div className="panel-section">
               <div className="section-title">
-                <Settings2 size={16} />
+                <Settings2 size={16} aria-hidden="true" />
                 <span>{t.session}</span>
               </div>
               <Stepper label={t.files} value={settings.dailyGoal} min={4} max={40} onChange={(value) => updateSettings({ dailyGoal: value })} />
@@ -623,7 +558,7 @@ export default function App() {
 
             <div className="panel-section">
               <label className="select-label" htmlFor="language">
-                <Languages size={16} />
+                <Languages size={16} aria-hidden="true" />
                 <span>{t.language}</span>
               </label>
               <select id="language" value={language} onChange={(event) => setLanguage(event.currentTarget.value as Language)}>
@@ -635,7 +570,7 @@ export default function App() {
 
             <div className="panel-section stats-section">
               <div className="section-title">
-                <Trash2 size={16} />
+                <Trash2 size={16} aria-hidden="true" />
                 <span>{t.statistics}</span>
               </div>
               <StatLine label={t.deletedFiles} value={String(totals.trashed)} />
@@ -649,15 +584,23 @@ export default function App() {
       )}
 
       {showTutorial && (
-        <div className="modal-backdrop tutorial-backdrop" role="dialog" aria-modal="true" aria-labelledby="tutorial-title">
-          <div className="tutorial-panel">
+        <div className="modal-backdrop tutorial-backdrop">
+          <div
+            className="tutorial-panel"
+            ref={tutorialDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tutorial-title"
+            tabIndex={-1}
+            data-testid="tutorial-dialog"
+          >
             <div className="tutorial-card-preview">
               <div className="tutorial-zone trash-zone">
-                <Trash2 size={18} />
+                <Trash2 size={18} aria-hidden="true" />
               </div>
               <div className="tutorial-mini-card" />
               <div className="tutorial-zone keep-zone">
-                <Check size={18} />
+                <Check size={18} aria-hidden="true" />
               </div>
             </div>
             <h2 id="tutorial-title">{t.tutorialTitle}</h2>
@@ -670,6 +613,76 @@ export default function App() {
         </div>
       )}
     </div>
+  );
+}
+
+function useDialogFocus<T extends HTMLElement>(isOpen: boolean, onClose: () => void) {
+  const dialogRef = useRef<T | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    const focusTimer = window.setTimeout(() => dialogRef.current?.focus(), 0);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const dialog = dialogRef.current;
+      if (!dialog) {
+        return;
+      }
+      const focusable = getFocusableElements(dialog);
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || active === dialog)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener("keydown", onKeyDown);
+      previousFocusRef.current?.focus();
+    };
+  }, [isOpen, onClose]);
+
+  return dialogRef;
+}
+
+function getFocusableElements(container: HTMLElement) {
+  const focusableSelector = [
+    "button:not([disabled])",
+    "[href]",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    "[tabindex]:not([tabindex='-1'])"
+  ].join(",");
+
+  return Array.from(container.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+    (element) => !element.hasAttribute("hidden") && element.offsetParent !== null
   );
 }
 
@@ -691,11 +704,11 @@ function Stepper({
       <span>{label}</span>
       <div>
         <button type="button" onClick={() => onChange(Math.max(min, value - 1))} disabled={value <= min} aria-label={`Reduce ${label}`}>
-          <Minus size={14} />
+          <Minus size={14} aria-hidden="true" />
         </button>
         <strong>{value}</strong>
         <button type="button" onClick={() => onChange(Math.min(max, value + 1))} disabled={value >= max} aria-label={`Increase ${label}`}>
-          <Plus size={14} />
+          <Plus size={14} aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -755,7 +768,7 @@ function FilePreview({ file }: { file: FileCandidate }) {
   if (file.kind === "audio" && file.previewUrl) {
     return (
       <div className="preview-frame audio-preview">
-        <Music size={48} />
+        <Music size={48} aria-hidden="true" />
         <audio src={file.previewUrl} controls />
       </div>
     );
@@ -780,7 +793,7 @@ function FilePreview({ file }: { file: FileCandidate }) {
   const Icon = iconComponentForKind(file.kind);
   return (
     <div className="preview-frame blank-preview">
-      <Icon size={62} strokeWidth={1.5} />
+      <Icon size={62} strokeWidth={1.5} aria-hidden="true" />
       <span>{file.extension || "FILE"}</span>
     </div>
   );
@@ -790,7 +803,7 @@ function iconForKind(kind: FileKind) {
   const Icon = iconComponentForKind(kind);
   return (
     <div className="kind-icon">
-      <Icon size={18} />
+      <Icon size={18} aria-hidden="true" />
     </div>
   );
 }
@@ -808,13 +821,6 @@ function iconComponentForKind(kind: FileKind): LucideIcon {
     video: Film
   };
   return icons[kind] ?? File;
-}
-
-function formatAge(days: number, t: Record<string, string>) {
-  if (days < 1) return t.ageToday;
-  if (days < 31) return `${days}${t.dayShort}`;
-  if (days < 365) return `${Math.round(days / 30)} ${t.monthShort}`;
-  return `${Math.round(days / 365)} ${t.yearShort}`;
 }
 
 function formatDate(value: string, language: Language) {
