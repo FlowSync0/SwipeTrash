@@ -1,0 +1,17 @@
+platform,priority,url,requires_account,status,notes
+Product Hunt,1,https://www.producthunt.com/launch,yes,not_started,Prepare media and maker comment before posting.
+Hacker News Show HN,1,https://news.ycombinator.com/showhn.html,yes,not_started,Use only after release assets are ready and downloadable.
+AlternativeTo,1,https://alternativeto.net/faq/,yes,not_started,Use Suggest new application; app is reviewed before approval.
+Uneed,2,https://www.uneed.best/submit-a-tool,yes,not_started,Submission can start from URL, then sign-up is required to save.
+Microlaunch,2,https://microlaunch.net/,yes,not_started,Launch platform for maker products and startups.
+Indie Hackers,2,https://www.indiehackers.com/,yes,not_started,Post as a build-in-public story and ask for feedback.
+Reddit r/macapps,2,https://www.reddit.com/r/macapps/,yes,not_started,Respect current self-promotion and karma rules.
+Reddit r/SideProject,2,https://www.reddit.com/r/SideProject/,yes,not_started,Ask for feedback; do not ask for votes.
+Dev.to,3,https://dev.to/,yes,not_started,Publish the build story article.
+Peerlist Launchpad,3,https://peerlist.io/launchpad,yes,not_started,Useful for maker/dev audience.
+DevHunt,3,https://devhunt.org/,yes,not_started,Frame as an open-source desktop utility.
+Tiny Startups,3,https://www.tinystartups.com/,yes,not_started,Submit after release page is stable.
+Fazier,3,https://fazier.com/,yes,not_started,Startup/tool directory.
+BetaList,3,https://betalist.com/,yes,not_started,Only if early beta positioning is acceptable.
+Smol Launch,3,https://smollaunch.com/,yes,not_started,Indie maker launch directory.
+Launching Next,3,https://www.launchingnext.com/,yes,not_started,Startup/product directory.
