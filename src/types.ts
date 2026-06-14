@@ -1,6 +1,6 @@
 export type FileKind = "archive" | "audio" | "document" | "image" | "installer" | "other" | "pdf" | "text" | "video";
 
-export type DecisionAction = "keep" | "skip" | "trash";
+export type DecisionAction = "keep" | "keep_always" | "skip" | "trash";
 
 export interface ScanSettings {
   includeDocuments: boolean;
@@ -70,6 +70,7 @@ export interface TrashResult {
 export interface SwipeTrashApi {
   getCandidates(settings?: Partial<ScanSettings>): Promise<ScanResult>;
   recordKeep(filePath: string): Promise<{ ok: boolean; dayStats: DayStats; totals: LifetimeStats }>;
+  recordKeepAlways(filePath: string): Promise<{ ok: boolean; dayStats: DayStats; totals: LifetimeStats }>;
   forgetDecision(filePath: string): Promise<{ ok: boolean; dayStats: DayStats; totals: LifetimeStats }>;
   trashFiles(filePaths: string[]): Promise<TrashResult>;
   openFile(filePath: string): Promise<{ ok: boolean; error?: string }>;

@@ -38,6 +38,7 @@ function clampInteger(value, fallback, min, max) {
 contextBridge.exposeInMainWorld("swipeTrash", {
   getCandidates: (settings) => ipcRenderer.invoke("files:get-candidates", normalizeSettings(settings)),
   recordKeep: (filePath) => invokeWithPath("files:record-keep", filePath),
+  recordKeepAlways: (filePath) => invokeWithPath("files:record-keep-always", filePath),
   forgetDecision: (filePath) => invokeWithPath("files:forget-decision", filePath),
   trashFiles: (filePaths) => ipcRenderer.invoke("files:trash", normalizePathBatch(filePaths)),
   openFile: (filePath) => invokeWithPath("files:open", filePath),

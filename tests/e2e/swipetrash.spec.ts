@@ -2,7 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 type AxeBuilderOptions = ConstructorParameters<typeof AxeBuilder>[0];
-type MockApiMode = "empty" | "error" | "loading" | "long" | "trash-failure";
+type MockApiMode = "empty" | "error" | "loading" | "long" | "never-ask" | "trash-failure";
 
 class SwipeTrashPage {
   readonly page: Page;
@@ -57,8 +57,44 @@ async function installMockApi(page: Page, mode: MockApiMode) {
       dailyGoal: 12,
       minAgeDays: 7
     };
-    const dayStats = { kept: 0, trashed: 0, trashedBytes: 0 };
+    let dayStats = { kept: 0, trashed: 0, trashedBytes: 0 };
     const totals = { trashed: 0, trashedBytes: 0 };
+    const neverAskCandidates = [
+      {
+        id: "never-ask-first",
+        name: "Screenshot 2025-11-03.png",
+        path: "/mock/Downloads/Screenshot 2025-11-03.png",
+        directory: "/mock/Downloads",
+        rootLabel: "Downloads",
+        extension: "PNG",
+        kind: "image",
+        size: 1843200,
+        sizeLabel: "1.8 MB",
+        modifiedAt: new Date("2025-11-03T10:00:00.000Z").toISOString(),
+        ageDays: 58,
+        reason: "Screenshot · Old file",
+        score: 4,
+        previewUrl: "",
+        textPreview: ""
+      },
+      {
+        id: "never-ask-second",
+        name: "Export-notes.txt",
+        path: "/mock/Documents/Export-notes.txt",
+        directory: "/mock/Documents",
+        rootLabel: "Documents",
+        extension: "TXT",
+        kind: "text",
+        size: 6800,
+        sizeLabel: "7 KB",
+        modifiedAt: new Date("2025-10-10T10:00:00.000Z").toISOString(),
+        ageDays: 120,
+        reason: "Old file",
+        score: 1,
+        previewUrl: "",
+        textPreview: "Temporary list"
+      }
+    ];
     const longCandidate = {
       id: "long-file",
       name: "Super-long-export-name-with-client-copy-final-final-final-final-version-that-should-never-break-layout.zip",
@@ -105,6 +141,8 @@ async function installMockApi(page: Page, mode: MockApiMode) {
         const candidates =
           mockMode === "long"
             ? [longCandidate]
+            : mockMode === "never-ask"
+              ? neverAskCandidates
             : mockMode === "trash-failure"
               ? [firstFailureCandidate, secondFailureCandidate]
               : [];
@@ -123,6 +161,12 @@ async function installMockApi(page: Page, mode: MockApiMode) {
         };
       },
       async recordKeep() {
+        dayStats = { ...dayStats, kept: dayStats.kept + 1 };
+        return { ok: true, dayStats, totals };
+      },
+      async recordKeepAlways(filePath: string) {
+        window.localStorage.setItem("swipetrash.test.hiddenPath", filePath);
+        dayStats = { ...dayStats, kept: dayStats.kept + 1 };
         return { ok: true, dayStats, totals };
       },
       async forgetDecision() {
@@ -222,6 +266,24 @@ test("keeps the compact layout contained", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Reveal in folder" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Open preview" })).toBeVisible();
   await expectViewportContained(page);
+});
+
+test("can keep a file and hide it from future scans", async ({ page }) => {
+  await installMockApi(page, "never-ask");
+  await page.goto("/");
+
+  const app = new SwipeTrashPage(page);
+  await expect(app.card).toBeVisible();
+
+  await expect(app.fileName).toHaveText("Screenshot 2025-11-03.png");
+  await page.getByRole("button", { name: "Never ask again" }).click();
+
+  await expect(app.fileName).toHaveText("Export-notes.txt");
+  await expect(page.getByText("1 / 12")).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Kept and hidden from future scans.");
+
+  const hiddenPath = await page.evaluate(() => window.localStorage.getItem("swipetrash.test.hiddenPath"));
+  expect(hiddenPath).toBe("/mock/Downloads/Screenshot 2025-11-03.png");
 });
 
 test("passes automated accessibility checks on main and settings views", async ({ page }) => {

@@ -27,7 +27,8 @@ import type { LucideIcon } from "lucide-react";
 import type { FileCandidate, FileKind, LifetimeStats, ScanResult, ScanSettings, SwipeTrashApi } from "./types";
 
 type Language = "en" | "fr" | "es";
-type SwipeAction = "keep" | "trash";
+type SwipeAction = "keep" | "keepAlways" | "trash";
+type FlightAction = "keep" | "trash";
 
 const DEFAULT_SETTINGS: ScanSettings = {
   includeDocuments: true,
@@ -51,6 +52,7 @@ const COPY = {
     refresh: "Refresh",
     reveal: "Reveal in folder",
     preview: "Open preview",
+    neverAsk: "Never ask again",
     undo: "Undo",
     keep: "Keep",
     trash: "Trash",
@@ -73,8 +75,10 @@ const COPY = {
     tutorialHint: "Use the two icons below for folder and preview.",
     moved: "Moved to trash.",
     kept: "Kept.",
+    keptAlways: "Kept and hidden from future scans.",
     failedTrash: "Could not move this file to trash.",
     failedKeep: "Could not keep this file.",
+    failedKeepAlways: "Could not hide this file from future scans.",
     ageToday: "today",
     dayShort: "d",
     monthShort: "mo",
@@ -90,6 +94,7 @@ const COPY = {
     refresh: "Actualiser",
     reveal: "Afficher dans le dossier",
     preview: "Ouvrir l’aperçu",
+    neverAsk: "Ne plus demander",
     undo: "Annuler",
     keep: "Garder",
     trash: "Corbeille",
@@ -112,8 +117,10 @@ const COPY = {
     tutorialHint: "Les deux icônes servent à ouvrir le dossier et prévisualiser.",
     moved: "Mis à la corbeille.",
     kept: "Gardé.",
+    keptAlways: "Gardé et masqué des prochains scans.",
     failedTrash: "Impossible de mettre ce fichier à la corbeille.",
     failedKeep: "Impossible de garder ce fichier.",
+    failedKeepAlways: "Impossible de masquer ce fichier des prochains scans.",
     ageToday: "aujourd'hui",
     dayShort: "j",
     monthShort: "mois",
@@ -129,6 +136,7 @@ const COPY = {
     refresh: "Actualizar",
     reveal: "Mostrar en carpeta",
     preview: "Abrir vista previa",
+    neverAsk: "No volver a preguntar",
     undo: "Deshacer",
     keep: "Conservar",
     trash: "Papelera",
@@ -151,8 +159,10 @@ const COPY = {
     tutorialHint: "Los dos iconos sirven para abrir carpeta y previsualizar.",
     moved: "Movido a la papelera.",
     kept: "Conservado.",
+    keptAlways: "Conservado y oculto de futuros escaneos.",
     failedTrash: "No se pudo mover este archivo a la papelera.",
     failedKeep: "No se pudo conservar este archivo.",
+    failedKeepAlways: "No se pudo ocultar este archivo de futuros escaneos.",
     ageToday: "hoy",
     dayShort: "d",
     monthShort: "mes",
@@ -178,7 +188,7 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [drag, setDrag] = useState({ active: false, startX: 0, x: 0 });
-  const [flight, setFlight] = useState<{ action: SwipeAction; x: number } | null>(null);
+  const [flight, setFlight] = useState<{ action: FlightAction; x: number } | null>(null);
   const didLoad = useRef(false);
   const decisionQueue = useRef<Promise<void>>(Promise.resolve());
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
@@ -263,8 +273,9 @@ export default function App() {
     const file = current;
     const actionIndex = index;
     const releaseX = drag.active ? drag.x : 0;
+    const flightAction = action === "trash" ? "trash" : "keep";
     setActing(true);
-    setFlight({ action, x: releaseX });
+    setFlight({ action: flightAction, x: releaseX });
     setDrag({ active: false, startX: 0, x: 0 });
 
     await delay(SWIPE_EXIT_MS);
@@ -274,12 +285,12 @@ export default function App() {
 
     decisionQueue.current = decisionQueue.current.catch(() => undefined).then(async () => {
       try {
-        if (action === "keep") {
-          const result = await api.recordKeep(file.path);
+        if (action === "keep" || action === "keepAlways") {
+          const result = action === "keepAlways" ? await api.recordKeepAlways(file.path) : await api.recordKeep(file.path);
           setDayStats(result.dayStats);
           setTotals(result.totals);
           setUndoEntry({ file, index: actionIndex });
-          setNotice(t.kept);
+          setNotice(action === "keepAlways" ? t.keptAlways : t.kept);
         } else {
           const result = await api.trashFiles([file.path]);
           const moved = result.results.some((item) => item.ok);
@@ -297,7 +308,15 @@ export default function App() {
       } catch (decisionError) {
         setIndex(actionIndex);
         setNotice("");
-        setError(decisionError instanceof Error ? decisionError.message : action === "trash" ? t.failedTrash : t.failedKeep);
+        setError(
+          decisionError instanceof Error
+            ? decisionError.message
+            : action === "trash"
+              ? t.failedTrash
+              : action === "keepAlways"
+                ? t.failedKeepAlways
+                : t.failedKeep
+        );
       }
     });
   }
@@ -484,6 +503,9 @@ export default function App() {
                   </IconButton>
                   <IconButton label={t.preview} onClick={() => current && void api.openFile(current.path)} disabled={!current}>
                     <Eye size={21} aria-hidden="true" />
+                  </IconButton>
+                  <IconButton label={t.neverAsk} onClick={() => current && void decide("keepAlways")} disabled={!current || acting}>
+                    <ShieldCheck size={21} aria-hidden="true" />
                   </IconButton>
                 </div>
               </>
@@ -900,6 +922,11 @@ function createMockApi(): SwipeTrashApi {
       };
     },
     async recordKeep(filePath) {
+      void filePath;
+      dayStats = { ...dayStats, kept: dayStats.kept + 1 };
+      return { ok: true, dayStats, totals };
+    },
+    async recordKeepAlways(filePath) {
       void filePath;
       dayStats = { ...dayStats, kept: dayStats.kept + 1 };
       return { ok: true, dayStats, totals };

@@ -951,10 +951,18 @@ function registerIpcHandlers() {
     return { ok: true, dayStats: getDayStats(state), totals: getTotals(state) };
   });
 
+  ipcMain.handle("files:record-keep-always", async (_event, filePath) => {
+    const state = await loadState();
+    const candidate = await validateReviewableFilePath(filePath, state.settings);
+    rememberDecision(state, candidate.resolved, "keep_always");
+    await saveState();
+    return { ok: true, dayStats: getDayStats(state), totals: getTotals(state) };
+  });
+
   ipcMain.handle("files:forget-decision", async (_event, filePath) => {
     const state = await loadState();
     const resolved = validateFilePath(filePath, state.settings);
-    if (state.reviewed[resolved]?.action === "keep") {
+    if (state.reviewed[resolved]?.action === "keep" || state.reviewed[resolved]?.action === "keep_always") {
       delete state.reviewed[resolved];
       const day = localDayKey();
       if (state.days[day]) {
